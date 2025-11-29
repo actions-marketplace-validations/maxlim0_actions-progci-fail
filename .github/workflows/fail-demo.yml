@@ -1,15 +1,3 @@
-# Programmatic CI Failure Helper
-
-GitHub Action that inspects the current workflow run, finds the first failed job/step, tails its logs, and asks OpenRouter for likely fixes. Output goes to the action log (no PR comments).
-
-## Inputs
-- `openrouter_api_key` (required): OpenRouter API key.
-- `model` (required): OpenRouter model name (e.g., `x-ai/grok-4.1-fast:free`).
-- `prompt_template` (required): Must include `{{LOG}}`; optional placeholders: `{{WORKFLOW_NAME}}`, `{{JOB_NAME}}`, `{{STEP_NAME}}`.
-- `max_log_lines` (optional, default 500): Tail lines included from the failed job log.
-
-## Example workflow (single job with failing step)
-```yaml
 name: AI CI Failure Demo
 
 on:
@@ -45,9 +33,3 @@ jobs:
 
             Explain the likely root cause and suggest concrete fixes.
           max_log_lines: 200
-```
-
-## Notes
-- Use `if: always()` on the helper step so it runs even when previous steps fail.
-- The job will still fail because of the broken step; the helper only analyzes and logs suggestions.
-- The action tails the first failed job/step; secrets are not logged and logs are trimmed to `max_log_lines`.

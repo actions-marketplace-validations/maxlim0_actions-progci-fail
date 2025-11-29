@@ -17,7 +17,7 @@ function getInput(name, { required = false, defaultValue = '' } = {}) {
   return value.trim();
 }
 
-// Parses the GitHub event payload for this run.
+// Parses the GitHub event payload for this run (retained for compatibility/logging).
 function readEventPayload() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!eventPath) {
@@ -118,6 +118,20 @@ function renderTemplate(template, values) {
   return Object.entries(values).reduce((acc, [key, val]) => acc.split(`{{${key}}}`).join(val), template);
 }
 
+// Resolves repository/run context for the current workflow run.
+function resolveRunContext() {
+  const repository = process.env.GITHUB_REPOSITORY;
+  const runId = process.env.GITHUB_RUN_ID;
+  const runName = process.env.GITHUB_WORKFLOW || 'current workflow';
+
+  if (!repository || !runId) {
+    throw new Error('Repository or run id is missing; ensure this action runs inside a GitHub Actions workflow.');
+  }
+
+  const [owner, repo] = repository.split('/');
+  return { owner, repo, runId, runName };
+}
+
 // Sends the prompt to OpenRouter and returns the model response.
 async function callOpenRouter(apiKey, model, prompt) {
   const headers = {
@@ -177,29 +191,13 @@ async function main() {
 
   ensurePromptTemplate(promptTemplate);
 
-  const payload = readEventPayload();
-  const run = payload.workflow_run;
-  if (!run) {
-    console.log('Event is not workflow_run; exiting.');
-    return;
-  }
+  // Parse payload for logging/compatibility; logic uses current run context.
+  readEventPayload();
+  const context = resolveRunContext();
 
-  const conclusion = String(run.conclusion || '').toLowerCase();
-  if (!FAILURE_CONCLUSIONS.has(conclusion)) {
-    console.log(`Workflow run conclusion is "${run.conclusion}", nothing to analyze.`);
-    return;
-  }
+  console.log(`Starting CI failure analysis for workflow: ${context.runName} (#${context.runId})`);
 
-  const repository = run.repository?.full_name || process.env.GITHUB_REPOSITORY;
-  if (!repository) {
-    throw new Error('Repository information missing.');
-  }
-  const [owner, repo] = repository.split('/');
-  const runId = run.id;
-
-  console.log(`Starting CI failure analysis for workflow: ${run.name} (#${runId})`);
-
-  const jobs = await fetchJobs(owner, repo, runId, githubToken);
+  const jobs = await fetchJobs(context.owner, context.repo, context.runId, githubToken);
   if (!jobs.length) {
     console.log('No jobs found for this workflow run.');
     return;
@@ -214,7 +212,7 @@ async function main() {
   const failedStep = pickFailedStep(failedJob);
   const stepName = failedStep ? failedStep.name : 'Unknown step';
 
-  const logs = await fetchJobLogs(owner, repo, failedJob.id, githubToken);
+  const logs = await fetchJobLogs(context.owner, context.repo, failedJob.id, githubToken);
   const { text: trimmedLog, total: totalLogLines } = trimLog(logs, maxLogLines);
 
   console.log(`Analyzing job "${failedJob.name}" (id: ${failedJob.id}), step "${stepName}".`);
@@ -222,7 +220,7 @@ async function main() {
 
   const prompt = renderTemplate(promptTemplate, {
     LOG: trimmedLog || 'Log is empty.',
-    WORKFLOW_NAME: run.name || '',
+    WORKFLOW_NAME: context.runName || '',
     JOB_NAME: failedJob.name || '',
     STEP_NAME: stepName || '',
   });
@@ -237,7 +235,7 @@ async function main() {
 
   const body = [
     MARKER,
-    `CI Failure Analysis (workflow: ${run.name}, job: ${failedJob.name}, step: ${stepName})`,
+    `CI Failure Analysis (workflow: ${context.runName}, job: ${failedJob.name}, step: ${stepName})`,
     analysis,
     'Generated automatically after workflow failure.',
   ].join('\n');
