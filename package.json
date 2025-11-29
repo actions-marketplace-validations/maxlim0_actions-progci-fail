@@ -1,0 +1,16 @@
+{
+  "name": "ai-ci-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Action that analyzes failed CI workflow runs via OpenRouter and prints suggestions.",
+  "main": "dist/ci-index.js",
+  "scripts": {
+    "lint": "echo 'add lint'",
+    "test": "echo 'add tests'",
+    "build": "echo 'bundle if needed'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

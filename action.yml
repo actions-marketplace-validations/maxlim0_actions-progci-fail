@@ -1,0 +1,20 @@
+name: "AI CI Failure Helper"
+description: "Analyzes failed GitHub Actions workflow runs via OpenRouter and prints remediation suggestions."
+author: "AI CI Helper"
+inputs:
+  openrouter_api_key:
+    description: "OpenRouter API key."
+    required: true
+  model:
+    description: "OpenRouter model name to query."
+    required: true
+  prompt_template:
+    description: "Prompt template containing {{LOG}}; can also reference {{WORKFLOW_NAME}}, {{JOB_NAME}}, {{STEP_NAME}}."
+    required: true
+  max_log_lines:
+    description: "Max log lines to include from the failed job (tail)."
+    required: false
+    default: "500"
+runs:
+  using: "node20"
+  main: "dist/ci-index.js"
