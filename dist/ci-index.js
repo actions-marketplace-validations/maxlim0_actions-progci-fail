@@ -93,6 +93,16 @@ function pickJobWithFailedStep(jobs) {
     && job.steps.some((step) => FAILURE_CONCLUSIONS.has(String(step.conclusion || '').toLowerCase())));
 }
 
+// Picks a fallback job when no explicit failure detected (e.g., API lag).
+function pickFallbackJob(jobs) {
+  const currentJobName = process.env.GITHUB_JOB;
+  if (currentJobName) {
+    const byName = jobs.find((job) => job.name === currentJobName || job.id === currentJobName);
+    if (byName) return byName;
+  }
+  return jobs[0] || null;
+}
+
 // Picks the first failed step inside the job.
 function pickFailedStep(job) {
   if (!job || !Array.isArray(job.steps)) {
@@ -270,7 +280,7 @@ async function main() {
     return;
   }
 
-  const failedJob = pickFailedJob(jobs) || pickJobWithFailedStep(jobs);
+  const failedJob = pickFailedJob(jobs) || pickJobWithFailedStep(jobs) || pickFallbackJob(jobs);
   if (!failedJob) {
     console.log('No failed jobs detected (including in-progress jobs). Exiting.');
     return;
