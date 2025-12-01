@@ -287,8 +287,15 @@ async function main() {
   const failedStep = pickFailedStep(failedJob);
   const stepName = failedStep ? failedStep.name : 'Unknown step';
 
-  const logs = await fetchJobLogs(context.owner, context.repo, failedJob.id, githubToken);
-  const { text: trimmedLog, total: totalLogLines } = trimLog(logs, maxLogLines);
+  let logsText = '';
+  try {
+    logsText = await fetchJobLogs(context.owner, context.repo, failedJob.id, githubToken);
+  } catch (error) {
+    console.error('Failed to download job logs:', error.message);
+    logsText = `Logs unavailable: ${error.message}`;
+  }
+
+  const { text: trimmedLog, total: totalLogLines } = trimLog(logsText, maxLogLines);
 
   console.log(`Analyzing job "${failedJob.name}" (id: ${failedJob.id}), step "${stepName}".`);
   console.log(`Original log lines: ${totalLogLines}; included lines: ${Math.min(totalLogLines, maxLogLines)}`);
