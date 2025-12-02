@@ -4,7 +4,8 @@ const MARKER = '<!-- ai-ci-helper -->';
 const GITHUB_API_BASE = process.env.GITHUB_API_URL || 'https://api.github.com';
 const FAILURE_CONCLUSIONS = new Set(['failure', 'timed_out', 'cancelled', 'action_required']);
 
-// Reads action input from environment with optional defaults and required guard.
+// Читает входные параметры экшена из переменных окружения (INPUT_*),
+// проверяет обязательные и подставляет значения по умолчанию.
 function getInput(name, { required = false, defaultValue = '' } = {}) {
   const key = `INPUT_${name.toUpperCase().replace(/ /g, '_')}`;
   const value = process.env[key];
@@ -17,7 +18,8 @@ function getInput(name, { required = false, defaultValue = '' } = {}) {
   return value.trim();
 }
 
-// Parses the GitHub event payload for this run (retained for compatibility/logging).
+// Считывает JSON-файл события, с которым запустился GitHub Actions
+// (нужно для извлечения контекста и последующего поиска PR).
 function readEventPayload() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!eventPath) {
@@ -27,7 +29,8 @@ function readEventPayload() {
   return JSON.parse(raw);
 }
 
-// Builds base headers for GitHub REST requests.
+// Формирует базовые HTTP-заголовки для запросов к GitHub API
+// с учётом версии, токена и user-agent.
 function buildGitHubHeaders(token, extra = {}) {
   return {
     Accept: 'application/vnd.github+json',
@@ -38,7 +41,8 @@ function buildGitHubHeaders(token, extra = {}) {
   };
 }
 
-// Thin wrapper around fetch for GitHub API with JSON/text handling.
+// Универсальный запрос к GitHub API: отправляет HTTP-запрос, проверяет статус,
+// возвращает JSON или текст в зависимости от заголовка ответа.
 async function githubRequest(url, token, { method = 'GET', headers = {}, body } = {}) {
   const response = await fetch(url, {
     method,
@@ -48,7 +52,7 @@ async function githubRequest(url, token, { method = 'GET', headers = {}, body } 
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`GitHub API request failed: ${response.status} ${response.statusText} - ${text}`);
+    throw new Error(`GitHub API request failed: ${url} ${response.status} ${response.statusText} - ${text}`);
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -58,7 +62,8 @@ async function githubRequest(url, token, { method = 'GET', headers = {}, body } 
   return response.text();
 }
 
-// Retrieves all jobs for a workflow run, handling pagination.
+// Получает все jobs (задачи) конкретного workflow run, обходя страницы
+// по 100 записей за раз.
 async function fetchJobs(owner, repo, runId, token) {
   let page = 1;
   const jobs = [];
@@ -75,13 +80,14 @@ async function fetchJobs(owner, repo, runId, token) {
   return jobs;
 }
 
-// Fetches workflow run metadata (status/conclusion).
+// Берёт информацию о конкретном workflow run (нужна его финальная оценка — success/failure).
 async function fetchRun(owner, repo, runId, token) {
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/actions/runs/${runId}`;
   return githubRequest(url, token);
 }
 
-// Picks the latest failed job (by completed_at/start time) from the run.
+// Находит последний упавший job: смотрим, есть ли у него статус failure/timeout/cancelled
+// или упавшие шаги; сортируем по времени завершения и берём самый свежий.
 function pickFailedJob(jobs) {
   const failedJobs = (jobs || []).filter((job) => {
     const conclusion = String(job.conclusion || '').toLowerCase();
@@ -99,7 +105,8 @@ function pickFailedJob(jobs) {
   return failedJobs[0] || null;
 }
 
-// Picks the first failed step inside the job.
+// Находит упавший шаг внутри выбранного job. Берём последний упавший шаг,
+// чтобы анализировать самый свежий промах.
 function pickFailedStep(job) {
   if (!job || !Array.isArray(job.steps)) {
     return null;
@@ -108,13 +115,13 @@ function pickFailedStep(job) {
   return failedSteps[failedSteps.length - 1] || failedSteps[0] || null;
 }
 
-// Downloads logs for a specific job.
+// Скачивает логи указанного job целиком (как текст). Требуются права actions:read.
 async function fetchJobLogs(owner, repo, jobId, token) {
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`;
   return githubRequest(url, token);
 }
 
-// Tails the log to a maximum number of lines.
+// Обрезает лог до заданного количества строк с конца, чтобы не отправлять слишком много.
 function trimLog(logText, maxLines) {
   const lines = String(logText || '').split(/\r?\n/);
   if (lines.length <= maxLines) {
@@ -124,19 +131,20 @@ function trimLog(logText, maxLines) {
   return { text: trimmed.join('\n'), total: lines.length };
 }
 
-// Ensures the prompt contains the required log placeholder.
+// Проверяет, что в шаблоне запроса есть обязательный маркер {{LOG}}.
 function ensurePromptTemplate(template) {
   if (!template.includes('{{LOG}}')) {
     throw new Error('prompt_template must include {{LOG}} placeholder.');
   }
 }
 
-// Simple template renderer replacing {{KEY}} tokens.
+// Простая подстановка значений по ключам {{KEY}} в шаблоне текста.
 function renderTemplate(template, values) {
   return Object.entries(values).reduce((acc, [key, val]) => acc.split(`{{${key}}}`).join(val), template);
 }
 
-// Resolves repository/run context for the current workflow run.
+// Определяет контекст текущего запуска: репозиторий, ID run и имя workflow
+// из переменных окружения GitHub Actions.
 function resolveRunContext() {
   const repository = process.env.GITHUB_REPOSITORY;
   const runId = process.env.GITHUB_RUN_ID;
@@ -150,7 +158,8 @@ function resolveRunContext() {
   return { owner, repo, runId, runName };
 }
 
-// Attempts to resolve pull request number from event payload or ref.
+// Пытается вычислить номер PR: сперва из payload, затем из workflow_run.pull_requests,
+// потом из ссылки вида refs/pull/123/....
 function resolvePullRequestNumber(payload) {
   if (payload?.pull_request?.number) {
     return payload.pull_request.number;
@@ -166,7 +175,8 @@ function resolvePullRequestNumber(payload) {
   return null;
 }
 
-// Finds existing bot comment with marker in a PR.
+// Ищет в PR существующий комментарий нашего бота по маркеру,
+// чтобы обновлять, а не плодить новые.
 async function findExistingComment(owner, repo, issueNumber, token) {
   let page = 1;
   while (true) {
@@ -187,7 +197,7 @@ async function findExistingComment(owner, repo, issueNumber, token) {
   return null;
 }
 
-// Creates or updates a PR comment with the analysis.
+// Создаёт или обновляет PR-комментарий с переданным текстом.
 async function createOrUpdateComment(owner, repo, issueNumber, token, body, existingId) {
   if (existingId) {
     const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/comments/${existingId}`;
@@ -205,7 +215,7 @@ async function createOrUpdateComment(owner, repo, issueNumber, token, body, exis
   });
 }
 
-// Sends the prompt to OpenRouter and returns the model response.
+// Отправляет сформированный запрос в OpenRouter и возвращает текст ответа модели.
 async function callOpenRouter(apiKey, model, prompt) {
   const headers = {
     'Content-Type': 'application/json',
@@ -245,7 +255,8 @@ async function callOpenRouter(apiKey, model, prompt) {
   return String(content).trim();
 }
 
-// Main entrypoint: gather failed job log, build prompt, call OpenRouter, print and comment analysis.
+// Главный поток: проверяем, что workflow завершился с ошибкой, ищем последний упавший job/step,
+// тянем его логи, вызываем OpenRouter для анализа, пишем результат в лог и в PR-комментарий (если есть PR).
 async function main() {
   const openrouterApiKey = getInput('openrouter_api_key', { required: true });
   const model = getInput('model', { required: true });
