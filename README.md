@@ -8,7 +8,7 @@ GitHub Action that inspects the current workflow run, confirms it failed, finds 
 - `prompt_template` (required): Must include `{{LOG}}`; optional placeholders: `{{WORKFLOW_NAME}}`, `{{JOB_NAME}}`, `{{STEP_NAME}}`.
 - `max_log_lines` (optional, default 500): Tail lines included from the failed job log.
 
-## Example workflow (single job with failing step)
+## Example workflow (helper job after failure)
 ```yaml
 name: AI CI Failure Demo
 
@@ -20,10 +20,6 @@ on:
 jobs:
   fail-demo:
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      pull-requests: write
     steps:
       - name: Step 1 - always succeeds
         run: echo "Hello from the first step"
@@ -31,8 +27,16 @@ jobs:
       - name: Step 2 - broken docker build (fails intentionally)
         run: docker build -t invalid-image ./does-not-exist
 
-      - name: Step 3 - AI failure helper
-        if: always()
+  ai-helper:
+    needs: [fail-demo]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: AI failure helper
         uses: your-org/actions-progci-fail@v0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,7 +53,7 @@ jobs:
 ```
 
 ## Notes
-- Use `if: always()` on the helper step so it runs even when previous steps fail.
-- Helper runs only when the workflow conclusion is non-success; it must find a failed job/step and fetch its logs.
-- If the run is associated with a PR, the helper posts/updates a PR comment tagged with `<!-- ai-ci-helper -->`.
-- The action tails the latest failed job/step; secrets are not logged and logs are trimmed to `max_log_lines`.
+- Place the helper in a separate job with `needs: [...]` and `if: failure()` so целевые job уже завершены и логи доступны.
+- Helper обрабатывает только провалившийся workflow; если все прошло успешно, он завершается без анализа.
+- Если run связан с PR, helper создаёт/обновляет комментарий с маркером `<!-- ai-ci-helper -->`.
+- Логи берутся из последнего упавшего job/step и обрезаются до `max_log_lines`; секреты не выводятся в лог.

@@ -8,9 +8,6 @@ on:
 jobs:
   fail-demo:
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
     steps:
       - name: Step 1 - always succeeds
         run: echo "Hello from the first step"
@@ -18,8 +15,16 @@ jobs:
       - name: Step 2 - broken docker build (fails intentionally)
         run: docker build -t invalid-image ./does-not-exist
 
-      - name: Step 3 - AI failure helper
-        if: always()
+  ai-helper:
+    needs: [fail-demo]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: AI failure helper
         uses: maxlim0/actions-progci-fail@v0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

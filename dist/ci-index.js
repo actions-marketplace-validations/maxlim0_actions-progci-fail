@@ -86,10 +86,14 @@ async function fetchRun(owner, repo, runId, token) {
   return githubRequest(url, token);
 }
 
-// Находит последний упавший job: смотрим, есть ли у него статус failure/timeout/cancelled
+// Находит последний упавший job (исключая текущий helper job): смотрим, есть ли у него статус failure/timeout/cancelled
 // или упавшие шаги; сортируем по времени завершения и берём самый свежий.
 function pickFailedJob(jobs) {
+  const currentJobName = process.env.GITHUB_JOB;
   const failedJobs = (jobs || []).filter((job) => {
+    if (currentJobName && (job.name === currentJobName || job.id === currentJobName)) {
+      return false;
+    }
     const conclusion = String(job.conclusion || '').toLowerCase();
     const hasFailedStep = Array.isArray(job.steps)
       && job.steps.some((step) => FAILURE_CONCLUSIONS.has(String(step.conclusion || '').toLowerCase()));
@@ -282,8 +286,8 @@ async function main() {
 
   const runInfo = await fetchRun(context.owner, context.repo, context.runId, githubToken);
   const runConclusion = String(runInfo?.conclusion || '').toLowerCase();
-  if (runConclusion && !FAILURE_CONCLUSIONS.has(runConclusion)) {
-    console.log(`Workflow conclusion is "${runConclusion}". Nothing to analyze.`);
+  if (runConclusion === 'success') {
+    console.log('Workflow conclusion is "success". Nothing to analyze.');
     return;
   }
 
