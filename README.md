@@ -37,7 +37,7 @@ jobs:
       pull-requests: write
     steps:
       - name: AI failure helper
-        uses: your-org/actions-progci-fail@v0.1
+        uses: maxlim0/actions-progci-fail@v0.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -53,7 +53,7 @@ jobs:
 ```
 
 ## Notes
-- Place the helper in a separate job with `needs: [...]` and `if: failure()` so целевые job уже завершены и логи доступны.
-- Helper обрабатывает только провалившийся workflow; если все прошло успешно, он завершается без анализа.
-- Если run связан с PR, helper создаёт/обновляет комментарий с маркером `<!-- ai-ci-helper -->`.
-- Логи берутся из последнего упавшего job/step и обрезаются до `max_log_lines`; секреты не выводятся в лог.
+- Place the helper in a separate job with `needs: [...]` and `if: failure()` so target jobs are finished and logs are available.
+- Helper runs only when the workflow conclusion is non-success; if everything passes, it exits without analysis.
+- If the run is associated with a PR, the helper posts/updates a PR comment tagged with `<!-- ai-ci-helper -->`.
+- Logs come from the latest failed job/step and are trimmed to `max_log_lines`; secrets are not logged.

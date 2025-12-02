@@ -163,8 +163,8 @@ function resolveRunContext() {
 }
 
 // Пытается вычислить номер PR: сперва из payload, затем из workflow_run.pull_requests,
-// потом из ссылки вида refs/pull/123/....
-function resolvePullRequestNumber(payload) {
+// потом из refs/pull/..., иначе ищет PR по текущему коммиту.
+async function resolvePullRequestNumber(payload, context, token) {
   if (payload?.pull_request?.number) {
     return payload.pull_request.number;
   }
@@ -176,6 +176,26 @@ function resolvePullRequestNumber(payload) {
   if (match) {
     return Number.parseInt(match[1], 10);
   }
+
+  const sha = process.env.GITHUB_SHA || payload?.after;
+  if (!sha || !context?.owner || !context?.repo || !token) {
+    return null;
+  }
+
+  try {
+    const url = `${GITHUB_API_BASE}/repos/${context.owner}/${context.repo}/commits/${sha}/pulls`;
+    const pulls = await githubRequest(url, token, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (Array.isArray(pulls) && pulls.length > 0 && pulls[0]?.number) {
+      return pulls[0].number;
+    }
+  } catch (error) {
+    console.error('Failed to resolve PR by commit:', error.message);
+  }
+
   return null;
 }
 
@@ -338,7 +358,7 @@ async function main() {
   console.log('AI analysis:');
   console.log(body);
 
-  const prNumber = resolvePullRequestNumber(payload);
+  const prNumber = await resolvePullRequestNumber(payload, context, githubToken);
   if (!prNumber) {
     console.log('No pull request context detected; skipping PR comment.');
     return;
